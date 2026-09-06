@@ -2,6 +2,7 @@
 set -eu
 
 release=${1:-119-102}
+mode=${2:-xml}
 congress=${release%%-*}
 public_law=${release#*-}
 base="https://uscode.house.gov/download/releasepoints/us/pl/$congress/$public_law"
@@ -11,9 +12,7 @@ pdf_url="$base/pdf_usc26@$release.zip"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-curl -fL "$xml_url" -o "$tmp/code.xml.zip"
-curl -fL "$pdf_url" -o "$tmp/code.pdf.zip"
-
+curl -fL --retry 3 --max-time 180 "$xml_url" -o "$tmp/code.xml.zip"
 python3 - "$tmp/code.xml.zip" code.xml .xml <<'PY'
 import pathlib, sys, zipfile
 archive, output, suffix = sys.argv[1:]
@@ -24,7 +23,13 @@ with zipfile.ZipFile(archive) as z:
     pathlib.Path(output).write_bytes(z.read(names[0]))
 PY
 
-python3 - "$tmp/code.pdf.zip" code.pdf .pdf <<'PY'
+test -s code.xml
+grep -q 'INTERNAL REVENUE CODE' code.xml
+sha256sum code.xml > SHA256SUMS
+
+if [ "$mode" = all ]; then
+    curl -fL --retry 3 --max-time 180 "$pdf_url" -o "$tmp/code.pdf.zip"
+    python3 - "$tmp/code.pdf.zip" code.pdf .pdf <<'PY'
 import pathlib, sys, zipfile
 archive, output, suffix = sys.argv[1:]
 with zipfile.ZipFile(archive) as z:
@@ -33,12 +38,10 @@ with zipfile.ZipFile(archive) as z:
         raise SystemExit(f"expected one {suffix} file, found {names}")
     pathlib.Path(output).write_bytes(z.read(names[0]))
 PY
+    test -s code.pdf
+    sha256sum code.pdf >> SHA256SUMS
+fi
 
-test -s code.xml
-test -s code.pdf
-grep -q 'INTERNAL REVENUE CODE' code.xml
-
-sha256sum code.xml code.pdf > SHA256SUMS
 cat > SOURCE.md <<EOF
 # Source
 
@@ -52,7 +55,7 @@ PDF: $pdf_url
 
 Publisher: Office of the Law Revision Counsel, U.S. House of Representatives.
 
-The XML is the canonical machine-readable snapshot kept by this repository; the PDF is the corresponding official rendered edition.
+The XML is the canonical machine-readable snapshot kept by this repository. Run \`./get_code $release all\` to fetch the corresponding official rendered PDF too.
 EOF
 
-printf 'wrote code.xml, code.pdf, SOURCE.md, and SHA256SUMS\n'
+printf 'wrote code.xml, SOURCE.md, and SHA256SUMS\n'
