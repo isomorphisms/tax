@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+
+release=${1:-119-102}
+congress=${release%%-*}
+public_law=${release#*-}
+base="https://uscode.house.gov/download/releasepoints/us/pl/$congress/$public_law"
+xml_url="$base/xml_usc26@$release.zip"
+pdf_url="$base/pdf_usc26@$release.zip"
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+curl -fL "$xml_url" -o "$tmp/code.xml.zip"
+curl -fL "$pdf_url" -o "$tmp/code.pdf.zip"
+
+python3 - "$tmp/code.xml.zip" code.xml .xml <<'PY'
+import pathlib, sys, zipfile
+archive, output, suffix = sys.argv[1:]
+with zipfile.ZipFile(archive) as z:
+    names = [n for n in z.namelist() if n.lower().endswith(suffix)]
+    if len(names) != 1:
+        raise SystemExit(f"expected one {suffix} file, found {names}")
+    pathlib.Path(output).write_bytes(z.read(names[0]))
+PY
+
+python3 - "$tmp/code.pdf.zip" code.pdf .pdf <<'PY'
+import pathlib, sys, zipfile
+archive, output, suffix = sys.argv[1:]
+with zipfile.ZipFile(archive) as z:
+    names = [n for n in z.namelist() if n.lower().endswith(suffix)]
+    if len(names) != 1:
+        raise SystemExit(f"expected one {suffix} file, found {names}")
+    pathlib.Path(output).write_bytes(z.read(names[0]))
+PY
+
+test -s code.xml
+test -s code.pdf
+grep -q 'INTERNAL REVENUE CODE' code.xml
+
+sha256sum code.xml code.pdf > SHA256SUMS
+cat > SOURCE.md <<EOF
+# Source
+
+Official U.S. Code, Title 26 — Internal Revenue Code.
+
+Release point: Public Law $release
+
+XML: $xml_url
+
+PDF: $pdf_url
+
+Publisher: Office of the Law Revision Counsel, U.S. House of Representatives.
+
+The XML is the canonical machine-readable snapshot kept by this repository; the PDF is the corresponding official rendered edition.
+EOF
+
+printf 'wrote code.xml, code.pdf, SOURCE.md, and SHA256SUMS\n'
