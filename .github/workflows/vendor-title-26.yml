@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch official Title 26
+      - name: Fetch official Title 26 XML
         run: |
           chmod +x get_code
           ./get_code 119-102
@@ -24,7 +24,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add code.xml code.pdf SOURCE.md SHA256SUMS
+          git add code.xml SOURCE.md SHA256SUMS
           if git diff --cached --quiet; then
             exit 0
           fi
